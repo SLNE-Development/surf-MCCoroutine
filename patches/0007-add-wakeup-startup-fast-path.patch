@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:25:06 +0200
+Subject: [PATCH] add wakeup startup fast path
+
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt
+index bd30d9b7487dd37446ec8a0cef2ad6ce76be02e8..bfb81ace8c10137743be3bdf8916627d0c84f4fa 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt
+@@ -23,14 +23,24 @@ internal class WakeUpBlockServiceImpl(private val plugin: Plugin) {
+         craftSchedulerClazz.getDeclaredMethod("mainThreadHeartbeat", Int::class.java)
+     }
+ 
++    // surf start - provide startup completed fast path
++    /**
++     * Fast-path flag: once startup is complete, ensureWakeup() returns immediately
++     * with a single volatile read instead of checking multiple fields.
++     */
++    @Volatile
++    private var startupComplete: Boolean = false
++    // surf end - provide startup completed fast path
+     /**
+      * Enables or disables the server heartbeat hack.
+      */
++    @Volatile // surf - provide startup completed fast path
+     var isManipulatedServerHeartBeatEnabled: Boolean = false
+ 
+     /**
+      * Reference to the primary server thread.
+      */
++    @Volatile // surf - provide startup completed fast path
+     var primaryThread: Thread? = null
+ 
+     /**
+@@ -38,13 +48,16 @@ internal class WakeUpBlockServiceImpl(private val plugin: Plugin) {
+      * is not sleeping if a run is scheduled by blocking.
+      */
+     fun ensureWakeup() {
++        if (startupComplete) return // surf - provide startup completed fast path
+         if (!isManipulatedServerHeartBeatEnabled) {
++            val threadSupport = this.threadSupport // surf - provide startup completed fast path
+             if (threadSupport != null) {
+                 threadSupport!!.shutdown()
+-                threadSupport = null
++                this.threadSupport = null // surf - provide startup completed fast path
+             }
+ 
+             // In all cases except startup, the call immediately returns here.
++            startupComplete = true // surf - provide startup completed fast path
+             return
+         }
+ 
+@@ -52,6 +65,7 @@ internal class WakeUpBlockServiceImpl(private val plugin: Plugin) {
+             primaryThread = Thread.currentThread()
+         }
+ 
++        val primaryThread = primaryThread // surf - provide startup completed fast path
+         if (primaryThread == null) {
+             return
+         }
+@@ -75,5 +89,6 @@ internal class WakeUpBlockServiceImpl(private val plugin: Plugin) {
+      */
+     fun dispose() {
+         threadSupport?.shutdown()
++        startupComplete = true // surf - provide startup completed fast path
+     }
+ }

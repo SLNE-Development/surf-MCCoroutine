@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:16:21 +0200
+Subject: [PATCH] pre-resolve coroutine dispatchers
+
+* eagerly initialize Folia detection and shared dispatcher services
+* use dispatcher factories for region and entity dispatcher lookup
+* only close the main dispatcher after it has been initialized
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
+index b34e9e862866a3ae42aed9cb01d7cd32b5f380bc..58d232d35984999b18ca57332d7ae3686dcfa6f0 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
+@@ -2,10 +2,6 @@ package com.github.shynixn.mccoroutine.folia.impl
+ 
+ import com.github.shynixn.mccoroutine.folia.*
+ import com.github.shynixn.mccoroutine.folia.dispatcher.*
+-import com.github.shynixn.mccoroutine.folia.dispatcher.AsyncFoliaCoroutineDispatcher
+-import com.github.shynixn.mccoroutine.folia.dispatcher.EntityDispatcher
+-import com.github.shynixn.mccoroutine.folia.dispatcher.GlobalRegionDispatcher
+-import com.github.shynixn.mccoroutine.folia.dispatcher.RegionDispatcher
+ import com.github.shynixn.mccoroutine.folia.service.CommandServiceImpl
+ import com.github.shynixn.mccoroutine.folia.service.EventServiceImpl
+ import com.github.shynixn.mccoroutine.folia.service.WakeUpBlockServiceImpl
+@@ -28,21 +24,21 @@ internal class CoroutineSessionImpl(
+      * Gets if the Folia schedulers where successfully loaded into MCCoroutine.
+      * Returns false if MCCoroutine falls back to the BukkitScheduler.
+      */
+-    override val isFoliaLoaded: Boolean by lazy {
++    override val isFoliaLoaded: Boolean /* by lazy { */ = // surf - Eagerly initialized
+         try {
+             Class.forName("io.papermc.paper.threadedregions.RegionizedServer")
+             true
+         } catch (e: ClassNotFoundException) {
+             false
+         }
+-    }
++    /*} */ // surf - Eagerly initialized
+ 
+     /**
+      * Gets the block service during startup.
+      */
+-    private val wakeUpBlockService: WakeUpBlockServiceImpl by lazy {
++    private val wakeUpBlockService: WakeUpBlockServiceImpl /* by lazy { */ = // surf - Eagerly initialized
+         WakeUpBlockServiceImpl(plugin)
+-    }
++    /*} */ // surf - Eagerly initialized
+ 
+     /**
+      * Gets the event service.
+@@ -66,36 +62,60 @@ internal class CoroutineSessionImpl(
+     /**
+      * The global region dispatcher is simply used to perform edits on data that the global region owns, such as game rules, day time, weather, or to execute commands using the console command sender.
+      */
+-    override val dispatcherGlobalRegion: CoroutineContext by lazy {
++    override val dispatcherGlobalRegion: CoroutineContext /* by lazy { */ = // surf - Eagerly initialized
+         if (isFoliaLoaded) {
+             GlobalRegionDispatcher(plugin, wakeUpBlockService)
+         } else {
+             MinecraftCoroutineDispatcher(plugin, wakeUpBlockService)
+         }
+-    }
++    /*} */ // surf - Eagerly initialized
+ 
+     /**
+      * Gets the async dispatcher.
+      */
+-    override val dispatcherAsync: CoroutineContext by lazy {
++    override val dispatcherAsync: CoroutineContext /*by lazy { */ = // surf - Eagerly initialized
+         if (isFoliaLoaded) {
+             AsyncFoliaCoroutineDispatcher(plugin, wakeUpBlockService)
+         } else {
+             AsyncCoroutineDispatcher(plugin, wakeUpBlockService)
+         }
+-    }
++    /*} */ // surf - Eagerly initialized
+ 
+     /**
+      * The main dispatcher represents the main thread of a plugin.
+      */
++    private var dispatcherMainInitialized = false // surf - track dispatcher main initialization state
+     override val dispatcherMain: MainDispatcher by lazy {
++        dispatcherMainInitialized = true // surf - track dispatcher main initialization state
+         MainDispatcher(plugin, mcCoroutineConfiguration.mainDispatcherTickRateMs)
+     }
+ 
++    // surf start - pre-resolve dispatcher
++    /**
++     * Pre-resolved dispatcher factory for region dispatchers.
++     */
++    private val regionDispatcherFactory: (world: World, chunkX: Int, chunkZ: Int) -> CoroutineContext =
++        if (isFoliaLoaded) {
++            { world, chunkX, chunkZ -> RegionDispatcher(plugin, wakeUpBlockService, world, chunkX, chunkZ) }
++        } else {
++            { _, _, _ -> dispatcherGlobalRegion }
++        }
++
++    /**
++     * Pre-resolved dispatcher factory for entity dispatchers.
++     */
++    private val entityDispatcherFactory: (Entity) -> CoroutineContext = if (isFoliaLoaded) {
++        { entity -> EntityDispatcher(plugin, wakeUpBlockService, entity) }
++    } else {
++        { _ -> dispatcherGlobalRegion }
++    }
++    // surf end - pre-resolve dispatcher
++
+     /**
+      * The RegionizedTaskQueue allows tasks to be scheduled to be executed on the next tick of a region that owns a specific location, or creating such region if it does not exist.
+      */
+     override fun getRegionDispatcher(world: World, chunkX: Int, chunkZ: Int): CoroutineContext {
++        if (true) return regionDispatcherFactory(world, chunkX, chunkZ) // surf - pre-resolve dispatcher
+         if (isFoliaLoaded) {
+             return RegionDispatcher(plugin, wakeUpBlockService, world, chunkX, chunkZ)
+         }
+@@ -107,6 +127,7 @@ internal class CoroutineSessionImpl(
+     The EntityScheduler allows tasks to be scheduled to be executed on the region that owns the entity.
+      */
+     override fun getEntityDispatcher(entity: Entity): CoroutineContext {
++        if (true) return entityDispatcherFactory(entity) // surf - pre-resolve dispatcher
+         if (isFoliaLoaded) {
+             return EntityDispatcher(plugin, wakeUpBlockService, entity)
+         }
+@@ -209,7 +230,11 @@ internal class CoroutineSessionImpl(
+     fun dispose() {
+         scope.coroutineContext.cancelChildren()
+         scope.cancel()
+-        dispatcherMain.close()
++        // surf start - track dispatcher main initialization state
++        if (dispatcherMainInitialized) {
++            dispatcherMain.close()
++        }
++        // surf end - track dispatcher main initialization state
+         wakeUpBlockService.dispose()
+     }
+ }

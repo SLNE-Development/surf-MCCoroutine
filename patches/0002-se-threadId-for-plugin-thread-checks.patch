@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 16:52:17 +0200
+Subject: [PATCH] se threadId for plugin thread checks
+
+
+diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+index 1a2ad22f91baec5e8cac7e27c4195c22298a4f15..649267814a26b5cf7aef7eae6c60c035b3512cb9 100644
+--- a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
++++ b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+@@ -66,7 +66,7 @@ val Plugin.mainDispatcher: CoroutineContext
+  */
+ fun Plugin.ensurePluginThread() {
+     val threadId = mcCoroutine.getCoroutineSession(this).dispatcherMainThreadId
+-    if (Thread.currentThread().id != threadId) {
++    if (Thread.currentThread().threadId() != threadId) { // surf - change id to threadId()
+         throw IllegalStateException("The current thread is not the main thread of plugin ${name}.")
+     }
+ }
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+index 0c1fbb340cd8733cc02d036671b80863bae4bf73..2ef825107c8fd204edc3749060360bd8d809a5c2 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+@@ -19,7 +19,7 @@ class MainDispatcher(
+ 
+     init {
+         executor.submit {
+-            threadId = Thread.currentThread().id
++            threadId = Thread.currentThread().threadId() // surf - change id to threadId()
+         }
+         executor.scheduleAtFixedRate({
+             val actions = ArrayList<Runnable>()
+@@ -41,7 +41,7 @@ class MainDispatcher(
+             return
+         }
+ 
+-        if (Thread.currentThread().id != threadId) {
++        if (Thread.currentThread().threadId() != threadId) { // surf - change id to threadId()
+             actionQueue.add(block)
+         } else {
+             block.run()

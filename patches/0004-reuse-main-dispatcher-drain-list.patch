@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:07:34 +0200
+Subject: [PATCH] reuse main dispatcher drain list
+
+* skip dispatch when already on the main dispatcher thread
+* clear the reusable drain list when closing the dispatcher
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+index 2ef825107c8fd204edc3749060360bd8d809a5c2..c59acdf8238d7f10b48c5b767f1973647e7e893b 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+@@ -15,14 +15,28 @@ class MainDispatcher(
+         Thread(r, "MCCoroutine-${plugin.name}-MainThread")
+     }
+     private var actionQueue = ConcurrentLinkedQueue<Runnable>()
++
++    // surf start - reuse main dispatcher drain list
++    /**
++     * Thread id of the dedicated main thread.
++     */
++    @Volatile
++    // surf end - reuse main dispatcher drain list
+     var threadId = -1L
+ 
++    // surf start - reuse main dispatcher drain list
++    /**
++     * Pre-allocated drain list reused every tick to avoid repeated ArrayList allocation.
++     */
++    private val drainList = ArrayList<Runnable>(16)
++    // surf end - reuse main dispatcher drain list
++
+     init {
+         executor.submit {
+             threadId = Thread.currentThread().threadId() // surf - change id to threadId()
+         }
+         executor.scheduleAtFixedRate({
+-            val actions = ArrayList<Runnable>()
++            val actions = /* ArrayList<Runnable>() */ drainList; actions.clear() // surf - reuse main dispatcher drain list
+             while (true) {
+                 val action = actionQueue.poll() ?: break
+                 actions.add(action)
+@@ -33,6 +47,17 @@ class MainDispatcher(
+         }, 1L, tickRateMs, TimeUnit.MILLISECONDS)
+     }
+ 
++    // surf start - reuse main dispatcher drain list
++    /**
++     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
++     * Returns false if we are already on the main dispatcher thread, allowing the framework to
++     * skip dispatch entirely and run the block inline.
++     */
++    override fun isDispatchNeeded(context: CoroutineContext): Boolean {
++        return Thread.currentThread().threadId() != threadId
++    }
++    // surf end - reuse main dispatcher drain list
++
+     /**
+      * Handles dispatching the coroutine on the correct thread.
+      */
+@@ -58,6 +83,10 @@ class MainDispatcher(
+      * @throws Exception if this resource cannot be closed
+      */
+     override fun close() {
+-        executor.shutdown()
++        // surf start - reuse main dispatcher drain list
++//        executor.shutdown()
++        drainList.clear()
++        executor.shutdownNow()
++        // surf end - reuse main dispatcher drain list
+     }
+ }

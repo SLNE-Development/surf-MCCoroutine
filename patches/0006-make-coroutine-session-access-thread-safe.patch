@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:21:00 +0200
+Subject: [PATCH] make coroutine session access thread safe
+
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt
+index 8a73f017b948572cde31ebfe5d2d1e245653e527..36e3aa01e4ca5328e009aff0d561b0d8e25ba106 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt
+@@ -4,17 +4,19 @@ import com.github.shynixn.mccoroutine.folia.CoroutineSession
+ import com.github.shynixn.mccoroutine.folia.MCCoroutine
+ import com.github.shynixn.mccoroutine.folia.listener.PluginListener
+ import org.bukkit.plugin.Plugin
++import java.util.concurrent.ConcurrentHashMap
+ 
+ /**
+  * A singleton implementation which keeps all coroutine sessions of all plugins.
+  */
+ class MCCoroutineImpl : MCCoroutine {
+-    private val items = HashMap<Plugin, CoroutineSessionImpl>()
++    private val items = ConcurrentHashMap<Plugin, CoroutineSessionImpl>() // surf - make 'items' thread safe
+ 
+     /**
+      * Get coroutine session for the given plugin.
+      */
+     override fun getCoroutineSession(plugin: Plugin): CoroutineSession {
++        if (true) return items.computeIfAbsent(plugin) { createCoroutineSession(plugin) } // surf - make 'items' thread safe
+         if (!items.containsKey(plugin)) {
+             startCoroutineSession(plugin)
+         }
+@@ -26,6 +28,13 @@ class MCCoroutineImpl : MCCoroutine {
+      * Disables coroutine for the given plugin.
+      */
+     override fun disable(plugin: Plugin) {
++        // surf start - make 'items' thread safe
++        if (true) {
++            val session = items.remove(plugin) ?: return
++            session.dispose()
++            return
++        }
++        // surf end - make 'items' thread safe
+         if (!items.containsKey(plugin)) {
+             return
+         }
+@@ -39,13 +48,19 @@ class MCCoroutineImpl : MCCoroutine {
+      * Starts a new coroutine session.
+      */
+     private fun startCoroutineSession(plugin: Plugin) {
++        // surf start - make 'items' thread safe
++        this.items[plugin] = createCoroutineSession(plugin)
++    }
++
++    private fun createCoroutineSession(plugin: Plugin): CoroutineSessionImpl {
+         if (!plugin.isEnabled) {
+             throw RuntimeException("Plugin ${plugin.name} attempted to start a new coroutine session while being disabled. Dispatchers such as plugin.minecraftDispatcher and plugin.asyncDispatcher are using the BukkitScheduler, which is already disposed at this point of time. If you are starting a coroutine in onDisable, consider using runBlocking or a different plugin.mcCoroutineConfiguration.shutdownStrategy. See https://shynixn.github.io/MCCoroutine/wiki/site/plugindisable for details.")
+         }
+ 
+         val pluginListener = PluginListener(this, plugin)
+         val coroutineFacade = MCCoroutineConfigurationImpl(plugin, this)
+-        items[plugin] = CoroutineSessionImpl(plugin, coroutineFacade)
+         plugin.server.pluginManager.registerEvents(pluginListener, plugin)
++        return CoroutineSessionImpl(plugin, coroutineFacade)
+     }
++    // surf end - make 'items' thread safe
+ }

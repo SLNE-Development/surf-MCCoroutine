@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:01:44 +0200
+Subject: [PATCH] skip dispatcher scheduling on owned region threads
+
+* return false from region and entity dispatchers when already on the owning thread
+* return false from global and minecraft dispatchers when already on the target thread
+* update kdocs to describe inline execution behavior for dispatch checks
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt
+index 2a0e90a2e1346781790d5af0fe2e56592bb8a133..e23e6da7bc5acde8132909532226d1b0f19f324c 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt
+@@ -12,12 +12,12 @@ internal open class AsyncCoroutineDispatcher(
+     private val plugin: Plugin,
+     private val wakeUpBlockService: WakeUpBlockServiceImpl
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Always returns true: async tasks must always be dispatched to the async thread pool,
++     * regardless of the current thread.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+         return true
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncFoliaCoroutineDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncFoliaCoroutineDispatcher.kt
+index 428e93d0c31dcbe139be3a9f54cf997b43bc03c8..c73016cebdeade3dc302bef5c38aabff13dc8c7f 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncFoliaCoroutineDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncFoliaCoroutineDispatcher.kt
+@@ -12,12 +12,12 @@ internal open class AsyncFoliaCoroutineDispatcher(
+     private val plugin: Plugin,
+     private val wakeUpBlockService: WakeUpBlockServiceImpl
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Always returns true: async tasks must always be dispatched to Folia's async scheduler,
++     * regardless of the current thread.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+         return true
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/EntityDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/EntityDispatcher.kt
+index 825d7add3c9848dd3088c7e8015b2057daeadd6f..1837c538a0a5daf46be03227982de424abfa234f 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/EntityDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/EntityDispatcher.kt
+@@ -11,15 +11,14 @@ internal open class EntityDispatcher(
+     private val wakeUpBlockService: WakeUpBlockServiceImpl,
+     private val entity: Entity
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Returns false if the current thread already owns the entity's region, allowing inline execution.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+-        return true
++        return !plugin.server.isOwnedByCurrentRegion(entity) // surf - only schedule tasks if needed
+     }
+ 
+     /**
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/GlobalRegionDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/GlobalRegionDispatcher.kt
+index 660471f4b710f8e9b25d4c1152b9811b039c4407..2009a74442b109da213edd5bcb4709b7a4f14390 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/GlobalRegionDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/GlobalRegionDispatcher.kt
+@@ -9,15 +9,14 @@ internal open class GlobalRegionDispatcher(
+     private val plugin: Plugin,
+     private val wakeUpBlockService: WakeUpBlockServiceImpl
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Returns false if already on the global tick thread, allowing inline execution.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+-        return true
++        return !plugin.server.isGlobalTickThread // surf - only schedule tasks if needed
+     }
+ 
+     /**
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt
+index 0a7aee7e575a2753412cd76c27792bc16464bdbb..2cb7f95b19cd642d439e5d0e5953604775ce0c74 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt
+@@ -13,15 +13,14 @@ internal open class MinecraftCoroutineDispatcher(
+     private val plugin: Plugin,
+     private val wakeUpBlockService: WakeUpBlockServiceImpl
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Returns false only when already on the primary thread, allowing the framework to skip dispatch.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+-        return !plugin.server.isPrimaryThread && plugin.isEnabled
++        return !plugin.server.isPrimaryThread && (plugin.isEnabled || true) // surf - only schedule tasks if needed
+     }
+ 
+     /**
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/RegionDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/RegionDispatcher.kt
+index 7e19d5da47cf660fd3542e01b4ee077bf2f4bfa8..f6914374e28f71cdc3b0ac045c6aeacb4d68d75a 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/RegionDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/RegionDispatcher.kt
+@@ -13,15 +13,14 @@ internal open class RegionDispatcher(
+     private val chunkX: Int,
+     private val chunkZ: Int
+ ) : CoroutineDispatcher() {
++    // surf start - enhance kdocs
+     /**
+-     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
+-     * The default behavior for most dispatchers is to return `true`.
+-     * This method should generally be exception-safe. An exception thrown from this method
+-     * may leave the coroutines that use this dispatcher in the inconsistent and hard to debug state.
++     * Returns false if the current thread already owns this region, allowing inline execution.
+      */
++    // surf end - enhance kdocs
+     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
+         wakeUpBlockService.ensureWakeup()
+-        return true
++        return !plugin.server.isOwnedByCurrentRegion(world, chunkX, chunkZ) // surf - only schedule tasks if needed
+     }
+ 
+     /**

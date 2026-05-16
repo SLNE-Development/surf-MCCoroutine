@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:26:23 +0200
+Subject: [PATCH] eagerly initialize velocity dispatcher
+
+
+diff --git a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/CoroutineSessionImpl.kt b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/CoroutineSessionImpl.kt
+index 5e1b296212b45c5a5df946a2d51e4798cab376c8..e6c7ec5949cf75c7839218900de38ae0365913e5 100644
+--- a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/CoroutineSessionImpl.kt
++++ b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/CoroutineSessionImpl.kt
+@@ -31,9 +31,9 @@ internal class CoroutineSessionImpl(
+     /**
+      * Velocity Dispatcher.
+      */
+-    override val dispatcherVelocity: CoroutineContext by lazy {
++    override val dispatcherVelocity: CoroutineContext /*by lazy {*/ = // surf - Eagerly initialized
+         VelocityCoroutineDispatcher(pluginContainer, suspendingPluginContainer)
+-    }
++    /*} */ // surf - Eagerly initialized
+ 
+     init {
+         // Root Exception Handler. All Exception which are not consumed by the caller end up here.

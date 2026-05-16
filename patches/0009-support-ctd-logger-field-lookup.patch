@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 17:28:36 +0200
+Subject: [PATCH] support ctd logger field lookup
+
+
+diff --git a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt
+index 427401cc87154305230b8fe6992d6dc4ffa94862..1811c3548b25d505ebba94df8e868251e3687f51 100644
+--- a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt
++++ b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt
+@@ -15,6 +15,17 @@ class MCCoroutineImpl : MCCoroutine {
+     private val filterSessions = ConcurrentHashMap<PluginContainer, StartupLogFilter>()
+     private var logger: Logger? = null
+ 
++    // surf start - velocity ctd support
++    private val isVelocityCtd by lazy {
++        try {
++            Class.forName("com.velocityctd.proxy.queue.RedisVelocityQueue")
++            true
++        } catch (_: Exception) {
++            false
++        }
++    }
++    // surf end - velocity ctd support
++
+     /**
+      * Get coroutine session for the given plugin.
+      */
+@@ -87,7 +98,14 @@ class MCCoroutineImpl : MCCoroutine {
+     override fun disableLogging(plugin: PluginContainer, suspendingPluginContainer: SuspendingPluginContainer) {
+         try {
+             val clazz = Class.forName("com.velocitypowered.proxy.VelocityServer")
+-            val loggerField = clazz.getDeclaredField("logger")
++//            val loggerField = clazz.getDeclaredField("logger")
++            // surf start - velocity ctd support
++            val loggerField = if (!isVelocityCtd) {
++                clazz.getDeclaredField("logger")
++            } else {
++                clazz.getDeclaredField("LOGGER")
++            }
++            // surf end - velocity ctd support
+             loggerField.isAccessible = true
+             val filter = StartupLogFilter()
+             this.logger = loggerField.get(null) as Logger
