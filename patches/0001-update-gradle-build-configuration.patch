@@ -1,0 +1,503 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti <76837088+twisti-dev@users.noreply.github.com>
+Date: Sat, 16 May 2026 16:47:11 +0200
+Subject: [PATCH] update gradle build configuration
+
+* add root build configuration for Kotlin, Dokka, Java library, and Maven publishing
+* configure sources, Javadocs, JVM toolchain 25, and release repository publishing
+* replace module-local repositories and dependency versions with shared version catalog entries
+* limit included modules to Folia and Velocity API and core projects
+* update Gradle wrapper from 8.9 to 9.5.1
+
+diff --git a/build.gradle b/build.gradle
+deleted file mode 100644
+index eee4c13e485c7ba002678ab1cb8f1a5c64d8d692..0000000000000000000000000000000000000000
+--- a/build.gradle
++++ /dev/null
+@@ -1,213 +0,0 @@
+-import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+-import org.gradle.api.tasks.testing.logging.TestLogEvent
+-
+-buildscript {
+-    repositories {
+-        jcenter()
+-        maven { url 'https://plugins.gradle.org/m2/' }
+-        mavenCentral()
+-    }
+-    dependencies {
+-        classpath group: 'org.jetbrains.kotlin', name: 'kotlin-gradle-plugin', version: '1.9.25'
+-        classpath "org.jetbrains.dokka:dokka-gradle-plugin:1.9.20"
+-    }
+-}
+-
+-plugins {
+-    id 'org.jetbrains.kotlin.jvm' version '1.9.25'
+-    id 'io.codearte.nexus-staging' version '0.20.0'
+-    id "de.marcphilipp.nexus-publish" version '0.2.0'
+-}
+-
+-allprojects {
+-    apply plugin: 'org.jetbrains.dokka'
+-}
+-
+-repositories {
+-    mavenCentral()
+-    mavenLocal()
+-    jcenter()
+-}
+-
+-nexusStaging {
+-    packageGroup = "com.github.shynixn"
+-    username = project.hasProperty("ossrhUsername") ? project.findProperty("ossrhUsername") : System.getenv('SONATYPE_USERNAME')
+-    password = project.hasProperty("ossrhPassword") ? project.findProperty("ossrhPassword") : System.getenv('SONATYPE_PASSWORD')
+-    delayBetweenRetriesInMillis = 10000
+-    numberOfRetries = 100
+-}
+-
+-tasks.register("printVersion") {
+-    println(this.subprojects.getAt(0).version)
+-}
+-
+-subprojects {
+-    group 'com.github.shynixn.mccoroutine'
+-    version '2.22.0'
+-
+-    sourceCompatibility = 1.8
+-
+-    apply plugin: 'kotlin'
+-    apply plugin: 'signing'
+-    apply plugin: 'maven-publish'
+-    apply plugin: 'java-library'
+-    apply plugin: "de.marcphilipp.nexus-publish"
+-
+-    compileKotlin {
+-        kotlinOptions.jvmTarget = "1.8"
+-    }
+-    compileTestKotlin {
+-        kotlinOptions.jvmTarget = "1.8"
+-    }
+-
+-    test {
+-        useJUnitPlatform()
+-        testLogging.showStandardStreams = true
+-        failFast = true
+-
+-        testLogging {
+-            events(TestLogEvent.FAILED, TestLogEvent.PASSED, TestLogEvent.SKIPPED, TestLogEvent.STARTED)
+-            displayGranularity = 0
+-            showExceptions = true
+-            showCauses = true
+-            showStackTraces = true
+-            exceptionFormat = TestExceptionFormat.FULL
+-        }
+-    }
+-
+-    task sourcesJar(type: Jar) {
+-        from sourceSets.main.allSource
+-        getArchiveClassifier().set('sources')
+-    }
+-
+-    tasks.named("dokkaHtml") {
+-        outputDirectory = file("$buildDir/javadoc")
+-    }
+-
+-    task javadocJar(type: Jar, dependsOn: dokkaHtml) {
+-        from dokkaHtml.outputDirectory
+-        getArchiveClassifier().set('javadoc')
+-    }
+-
+-    publishing {
+-        publications {
+-            mavenJava(MavenPublication) {
+-                from components.java
+-                artifact sourcesJar
+-                artifact javadocJar
+-                pom {
+-                    name = 'MCCoroutine'
+-                    description = 'MCCoroutine is a library, which adds extensive support for Kotlin Coroutines for Minecraft Server environments.'
+-                    url = 'https://github.com/Shynixn/MCCoroutine'
+-                    licenses {
+-                        license {
+-                            name = 'MIT License'
+-                            url = 'http://www.opensource.org/licenses/mit-license.php'
+-                        }
+-                    }
+-                    developers {
+-                        developer {
+-                            name = 'Shynixn'
+-                            url = 'https://github.com/Shynixn'
+-                        }
+-                    }
+-                    scm {
+-                        connection = 'scm:git:git://github.com/Shynixn/MCCoroutine.git'
+-                        developerConnection = 'scm:git:ssh://github.com:Shynixn/MCCoroutine.git'
+-                        url = 'http://github.com/Shynixn/MCCoroutine.git/tree/master'
+-                    }
+-                }
+-            }
+-        }
+-        repositories {
+-            maven {
+-                def releasesRepoUrl = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+-                def snapshotsRepoUrl = "https://oss.sonatype.org/content/repositories/snapshots/"
+-                url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+-
+-                credentials {
+-                    username = project.hasProperty("ossrhUsername") ? project.findProperty("ossrhUsername") : System.getenv('SONATYPE_USERNAME')
+-                    password = project.hasProperty("ossrhPassword") ? project.findProperty("ossrhPassword") : System.getenv('SONATYPE_PASSWORD')
+-                }
+-            }
+-        }
+-    }
+-
+-    signing {
+-        sign publishing.publications.mavenJava
+-    }
+-
+-    repositories {
+-        mavenCentral()
+-        mavenLocal()
+-        jcenter()
+-    }
+-
+-    dependencies {
+-        testImplementation 'org.junit.jupiter:junit-jupiter-api:5.3.1'
+-        testImplementation 'org.mockito:mockito-core:5.14.2'
+-        testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.3.1'
+-    }
+-}
+-
+-gradle.taskGraph.whenReady { taskGraph ->
+-    if (project.findProperty("signing.keyId") == null) {
+-        ext."signing.keyId" = System.getenv('SIGNING_KEY_ID')
+-        ext."signing.password" = System.getenv('SIGNING_KEY_PASSWORD')
+-        ext."signing.secretKeyRingFile" = System.getenv('SIGNING_KEY_FILE')
+-    }
+-}
+-
+-task generateBukkitJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-bukkit-api/src/main/java"))
+-        }
+-    }
+-}
+-
+-task generateSpongeJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-sponge-api/src/main/java"))
+-        }
+-    }
+-}
+-
+-task generateBungeeCordJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-bungeecord-api/src/main/java"))
+-        }
+-    }
+-}
+-
+-task generateVelocityJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-velocity-api/src/main/java"))
+-        }
+-    }
+-}
+-
+-task generateMinestomJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-minestom-api/src/main/java"))
+-        }
+-    }
+-}
+-
+-task generateFabricJavaDocPages(type: org.jetbrains.dokka.gradle.DokkaTask) {
+-    dokkaSourceSets {
+-        named("main") {
+-            outputDirectory = file("docs/apidocs")
+-            sourceRoots.from(file("mccoroutine-fabric-api/src/main/java"))
+-        }
+-    }
+-}
+diff --git a/build.gradle.kts b/build.gradle.kts
+new file mode 100644
+index 0000000000000000000000000000000000000000..421e644efb0ff572670c7cdc8fcae0d902ca805b
+--- /dev/null
++++ b/build.gradle.kts
+@@ -0,0 +1,77 @@
++import org.gradle.jvm.tasks.Jar
++import org.jetbrains.kotlin.gradle.dsl.KotlinJvmExtension
++
++plugins {
++    kotlin("jvm") version "2.3.20" apply false
++    id("org.jetbrains.dokka-javadoc") version "2.2.0" apply false
++    `java-library`
++    `maven-publish`
++}
++
++allprojects {
++    group = "dev.slne.forks.mccoroutine"
++    version = findProperty("version") as String
++}
++
++subprojects {
++    val isApiModule = name.endsWith("-api")
++
++    apply(plugin = "java-library")
++
++    val dokkaJavadocJar = if (isApiModule) {
++        apply(plugin = "org.jetbrains.dokka-javadoc")
++
++        tasks.register<Jar>("dokkaJavadocJar") {
++            group = JavaBasePlugin.DOCUMENTATION_GROUP
++            description = "Assembles a JAR containing Dokka Javadoc output."
++            archiveClassifier.set("javadoc")
++            dependsOn(tasks.named("dokkaGeneratePublicationJavadoc"))
++            from(tasks.named("dokkaGeneratePublicationJavadoc"))
++        }
++    } else {
++        null
++    }
++
++    dependencies {
++        compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
++    }
++
++    extensions.findByType<KotlinJvmExtension>()?.apply {
++        jvmToolchain(25)
++    }
++
++    java {
++        withSourcesJar()
++        if (!isApiModule) {
++            withJavadocJar()
++        }
++    }
++
++    if (dokkaJavadocJar != null) {
++        tasks.named("assemble") {
++            dependsOn(dokkaJavadocJar)
++        }
++    }
++
++    apply(plugin = "maven-publish")
++
++    publishing {
++        repositories {
++            maven("https://reposilite.slne.dev/releases") {
++                name = "slne-repository-releases"
++                credentials {
++                    username = System.getenv("SLNE_RELEASES_REPO_USERNAME")
++                    password = System.getenv("SLNE_RELEASES_REPO_PASSWORD")
++                }
++            }
++        }
++
++        publications.create<MavenPublication>("maven") {
++            from(components["java"])
++
++            dokkaJavadocJar?.let {
++                artifact(it)
++            }
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/gradle.properties b/gradle.properties
+index 13e74dc075b763ee6deb492334a78dbde742aa56..c01e73168767a602e097926f869b360d5e91c64e 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -1,4 +1,5 @@
+ kotlin.code.style=official
+-javaVersion=1.8
+-kotlinVersion=1.9.25
++kotlin.stdlib.default.dependency=false
++#javaVersion=1.8
++#kotlinVersion=1.9.25
+ org.gradle.jvmargs=-Xms4g
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+new file mode 100644
+index 0000000000000000000000000000000000000000..e80f2c18bb9c9d6ac66dd0ac57a00a4770be94ae
+--- /dev/null
++++ b/gradle/libs.versions.toml
+@@ -0,0 +1,9 @@
++[versions]
++paper-api = "1.21.11-R0.1-SNAPSHOT"
++velocity-api = "3.5.0-SNAPSHOT"
++log4j = "2.25.3"
++
++[libraries]
++paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper-api" }
++velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity-api" }
++log4j-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "log4j" }
+\ No newline at end of file
+diff --git a/gradle/wrapper/gradle-wrapper.properties b/gradle/wrapper/gradle-wrapper.properties
+index 50a346ce261473cb4ecf639f6c4b3d80cf1437a9..394e1de938f833f0c04c3db83872754359f9349d 100644
+--- a/gradle/wrapper/gradle-wrapper.properties
++++ b/gradle/wrapper/gradle-wrapper.properties
+@@ -3,4 +3,4 @@ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+ zipStoreBase=GRADLE_USER_HOME
+ zipStorePath=wrapper/dists
+-distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-all.zip
++distributionUrl=https\://services.gradle.org/distributions/gradle-9.5.1-all.zip
+diff --git a/mccoroutine-folia-api/build.gradle.kts b/mccoroutine-folia-api/build.gradle.kts
+index 0606375b6dc78997fda5eb033c1fe7eab0d4d44e..ace4a2b19f419f6a757d09b923f2fd1b503f1d6f 100644
+--- a/mccoroutine-folia-api/build.gradle.kts
++++ b/mccoroutine-folia-api/build.gradle.kts
+@@ -1,3 +1,5 @@
++// surf start - update build
++/*
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ repositories {
+@@ -19,3 +21,12 @@ dependencies {
+     compileOnly("org.spigotmc:spigot-api:1.16.3-R0.1-SNAPSHOT")
+     compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9")
+ }
++ */
++plugins {
++    kotlin("jvm")
++}
++
++dependencies {
++    compileOnly(libs.paper.api)
++}
++// surf end - update build
+\ No newline at end of file
+diff --git a/mccoroutine-folia-core/build.gradle.kts b/mccoroutine-folia-core/build.gradle.kts
+index 037f71466ab0ac4dc994ca552f829f5123652593..47af684a7b4755bacea145c42928330d926ad228 100644
+--- a/mccoroutine-folia-core/build.gradle.kts
++++ b/mccoroutine-folia-core/build.gradle.kts
+@@ -1,3 +1,5 @@
++// surf start - update build
++/*
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ repositories {
+@@ -36,3 +38,14 @@ dependencies {
+     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9")
+     testImplementation("dev.folia:folia-api:1.21.4-R0.1-SNAPSHOT")
+ }
++ */
++
++plugins {
++    kotlin("jvm")
++}
++
++dependencies {
++    implementation(project(":mccoroutine-folia-api"))
++    compileOnly(libs.paper.api)
++}
++// surf end - update build
+\ No newline at end of file
+diff --git a/mccoroutine-velocity-api/build.gradle.kts b/mccoroutine-velocity-api/build.gradle.kts
+index fec0b57f8d62bca340d9ee7b6a178a154aeed58d..e08f78979c5dd19af997fa9415de2af223756bea 100644
+--- a/mccoroutine-velocity-api/build.gradle.kts
++++ b/mccoroutine-velocity-api/build.gradle.kts
+@@ -1,3 +1,5 @@
++// surf start - update build
++/*
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ repositories {
+@@ -20,3 +22,13 @@ dependencies {
+     compileOnly("com.velocitypowered:velocity-api:3.1.1")
+     testImplementation("com.velocitypowered:velocity-api:3.1.1")
+ }
++ */
++
++plugins {
++    kotlin("jvm")
++}
++
++dependencies {
++    compileOnly(libs.velocity.api)
++}
++// surf end - update build
+\ No newline at end of file
+diff --git a/mccoroutine-velocity-core/build.gradle.kts b/mccoroutine-velocity-core/build.gradle.kts
+index c9b4c6510522aa00a9d7202fd3848a54966f617b..eefd8b06352df471e57fbd82f54a42afe049e03b 100644
+--- a/mccoroutine-velocity-core/build.gradle.kts
++++ b/mccoroutine-velocity-core/build.gradle.kts
+@@ -1,3 +1,5 @@
++// surf start - update build
++/*
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ repositories {
+@@ -26,3 +28,15 @@ dependencies {
+     testImplementation(files("lib/velocity.jar"))
+     testImplementation("com.velocitypowered:velocity-api:3.1.1")
+ }
++ */
++
++plugins {
++    kotlin("jvm")
++}
++
++dependencies {
++    implementation(project(":mccoroutine-velocity-api"))
++    compileOnly(libs.velocity.api)
++    compileOnly(libs.log4j.core)
++}
++// surf end - update build
+\ No newline at end of file
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 91005f8d36f52bd80b256febba8d8cad69847733..ec3366ca3554fc12583d1dd82d5ac0ee017259d4 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -1,5 +1,15 @@
+ rootProject.name = "mccoroutine-root"
+ 
++// surf start - update build
++dependencyResolutionManagement {
++    repositories {
++        mavenCentral()
++        maven("https://reposilite.slne.dev/releases")
++        maven("https://repo.papermc.io/repository/maven-public/")
++    }
++}
++
++/*
+ include("mccoroutine-bukkit-api")
+ include("mccoroutine-bukkit-core")
+ include("mccoroutine-bukkit-test")
+@@ -11,12 +21,16 @@ include("mccoroutine-bungeecord-sample")
+ 
+ include("mccoroutine-fabric-api")
+ include("mccoroutine-fabric-core")
++ */
++// surf end - update build
+ 
+ include("mccoroutine-folia-api")
+ include("mccoroutine-folia-core")
+-include("mccoroutine-folia-test")
+-include("mccoroutine-folia-sample")
++//include("mccoroutine-folia-test") // surf - update build
++//include("mccoroutine-folia-sample") // surf - update build
+ 
++// surf start - update build
++/*
+ include("mccoroutine-minestom-api")
+ include("mccoroutine-minestom-core")
+ include("mccoroutine-minestom-sample")
+@@ -24,7 +38,8 @@ include("mccoroutine-minestom-sample")
+ include("mccoroutine-sponge-api")
+ include("mccoroutine-sponge-core")
+ include("mccoroutine-sponge-sample")
++ */
+ 
+ include("mccoroutine-velocity-api")
+ include("mccoroutine-velocity-core")
+-include("mccoroutine-velocity-sample")
++//include("mccoroutine-velocity-sample") // surf - update build
