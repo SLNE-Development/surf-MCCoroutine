@@ -1,0 +1,130 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti-dev <76837088+twisti-dev@users.noreply.github.com>
+Date: Thu, 9 Jul 2026 16:23:50 +0200
+Subject: [PATCH] Use optimized Folia main dispatcher
+
+Switch the Folia coroutine session to use OptimizedMainDispatcher instead of the tick-rate based MainDispatcher.
+
+The optimized dispatcher no longer depends on mainDispatcherTickRateMs for repeatedly polling the queue. Instead, it can schedule work only when coroutine dispatches are actually submitted, avoiding unnecessary idle wakeups while still preserving single-threaded main dispatcher execution.
+
+This reduces scheduler overhead for idle plugins and improves burst handling by letting the optimized dispatcher coalesce queued coroutine work instead of relying on fixed-rate draining.
+
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
+index 58d232d35984999b18ca57332d7ae3686dcfa6f0..d3bda00700948a851a0e1174d829d8a922ebae2e 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
+@@ -5,6 +5,7 @@ import com.github.shynixn.mccoroutine.folia.dispatcher.*
+ import com.github.shynixn.mccoroutine.folia.service.CommandServiceImpl
+ import com.github.shynixn.mccoroutine.folia.service.EventServiceImpl
+ import com.github.shynixn.mccoroutine.folia.service.WakeUpBlockServiceImpl
++import dev.slne.surf.mccoroutine.OptimizedMainDispatcher
+ import kotlinx.coroutines.*
+ import org.bukkit.World
+ import org.bukkit.command.PluginCommand
+@@ -85,9 +86,9 @@ internal class CoroutineSessionImpl(
+      * The main dispatcher represents the main thread of a plugin.
+      */
+     private var dispatcherMainInitialized = false // surf - track dispatcher main initialization state
+-    override val dispatcherMain: MainDispatcher by lazy {
++    override val dispatcherMain: OptimizedMainDispatcher by lazy { // surf - use optimized main dispatcher
+         dispatcherMainInitialized = true // surf - track dispatcher main initialization state
+-        MainDispatcher(plugin, mcCoroutineConfiguration.mainDispatcherTickRateMs)
++        OptimizedMainDispatcher(plugin) // surf - use optimized main dispatcher
+     }
+ 
+     // surf start - pre-resolve dispatcher
+diff --git a/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt b/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..c80bfb0f763c79cc2fd719fec9a2397f87dff68e
+--- /dev/null
++++ b/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt
+@@ -0,0 +1,88 @@
++package dev.slne.surf.mccoroutine
++
++import kotlinx.coroutines.CoroutineDispatcher
++import kotlinx.coroutines.Runnable
++import org.bukkit.plugin.Plugin
++import java.lang.AutoCloseable
++import java.util.concurrent.ConcurrentLinkedQueue
++import java.util.concurrent.Executors
++import java.util.concurrent.RejectedExecutionException
++import java.util.concurrent.atomic.AtomicBoolean
++import kotlin.coroutines.CoroutineContext
++
++class OptimizedMainDispatcher(private val plugin: Plugin): CoroutineDispatcher(), AutoCloseable {
++    private val executor = Executors.newSingleThreadExecutor { r ->
++        Thread(r, "MCCoroutine-${plugin.name}-MainThread")
++    }
++
++    private val actionQueue = ConcurrentLinkedQueue<Runnable>()
++
++    private val drainScheduled = AtomicBoolean(false)
++    private val closed = AtomicBoolean(false)
++
++    @Volatile
++    var threadId = -1L
++        private set
++
++    init {
++        executor.execute {
++            threadId = Thread.currentThread().threadId()
++        }
++    }
++
++    override fun isDispatchNeeded(context: CoroutineContext): Boolean {
++        return Thread.currentThread().threadId() != threadId
++    }
++
++    override fun dispatch(context: CoroutineContext, block: Runnable) {
++        if (closed.get()) return
++
++        if (!isDispatchNeeded(context)) {
++            block.run()
++            return
++        }
++
++        actionQueue.add(block)
++        scheduleDrain()
++    }
++
++    private fun scheduleDrain() {
++        if (!drainScheduled.compareAndSet(false, true)) return
++
++        try {
++            executor.execute {
++                drainQueue()
++            }
++        } catch (_: RejectedExecutionException) {
++            drainScheduled.set(false)
++
++            if (closed.get()) {
++                actionQueue.clear()
++            }
++        }
++    }
++
++    private fun drainQueue() {
++        try {
++            while (!closed.get()) {
++                val action = actionQueue.poll() ?: break
++                action.run()
++            }
++        } finally {
++            drainScheduled.set(false)
++
++            if (!closed.get() && actionQueue.isNotEmpty()) {
++                scheduleDrain()
++            }
++        }
++    }
++
++    override fun close() {
++        if (!closed.compareAndSet(false, true)) {
++            return
++        }
++
++        actionQueue.clear()
++        executor.shutdownNow()
++    }
++}
+\ No newline at end of file
