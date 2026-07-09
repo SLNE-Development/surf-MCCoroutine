@@ -1,8 +1,15 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:21:00 +0200
-Subject: [PATCH] make coroutine session access thread safe
+Subject: [PATCH] Make the Folia session registry thread-safe
 
+Sessions were kept in a plain HashMap behind a check-then-act lookup.
+With Folia's threaded regions, two threads can trigger the first
+session access for the same plugin concurrently and corrupt the map or
+create two sessions.
+
+Store sessions in a ConcurrentHashMap, create them atomically with
+computeIfAbsent() and disable them with an atomic remove().
 
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/MCCoroutineImpl.kt
 index 8a73f017b948572cde31ebfe5d2d1e245653e527..36e3aa01e4ca5328e009aff0d561b0d8e25ba106 100644

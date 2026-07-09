@@ -1,8 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 16:52:17 +0200
-Subject: [PATCH] se threadId for plugin thread checks
+Subject: [PATCH] Use Thread#threadId() instead of the deprecated Thread#id
 
+Thread#getId() is deprecated since Java 19 because it is non-final and
+may be overridden. Thread#threadId() returns the same value and is the
+recommended replacement.
 
 diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
 index 1a2ad22f91baec5e8cac7e27c4195c22298a4f15..649267814a26b5cf7aef7eae6c60c035b3512cb9 100644

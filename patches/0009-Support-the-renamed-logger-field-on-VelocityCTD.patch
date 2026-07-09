@@ -1,8 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:28:36 +0200
-Subject: [PATCH] support ctd logger field lookup
+Subject: [PATCH] Support the renamed logger field on VelocityCTD
 
+VelocityCTD renames VelocityServer's "logger" field to "LOGGER", which
+broke the reflective lookup in disableLogging() and disabled the
+startup log filter. Detect VelocityCTD once, via its RedisVelocityQueue
+class, and read the matching field.
 
 diff --git a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt
 index 427401cc87154305230b8fe6992d6dc4ffa94862..1811c3548b25d505ebba94df8e868251e3687f51 100644

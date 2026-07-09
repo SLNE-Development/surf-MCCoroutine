@@ -1,8 +1,16 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:34:19 +0200
-Subject: [PATCH] access coroutine sessions by plugin instance safely
+Subject: [PATCH] Fix Velocity session disposal and make session lookup atomic
 
+disable() looked up the session with the PluginContainer as key, but
+sessions are stored under the plugin instance, so the session was
+never found and never disposed. Remove it atomically under the correct
+key instead.
+
+getCoroutineSession() now uses a single map read instead of a
+containsKey()/get() pair, and setupCoroutineSession() calls
+containsKey() explicitly instead of the contains() operator alias.
 
 diff --git a/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt b/mccoroutine-velocity-core/src/main/java/com/github/shynixn/mccoroutine/velocity/impl/MCCoroutineImpl.kt
 index 1811c3548b25d505ebba94df8e868251e3687f51..ec99a09991abc7f06e57816e4250e47316014351 100644

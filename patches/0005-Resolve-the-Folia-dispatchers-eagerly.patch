@@ -1,11 +1,22 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:16:21 +0200
-Subject: [PATCH] pre-resolve coroutine dispatchers
+Subject: [PATCH] Resolve the Folia dispatchers eagerly
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-* eagerly initialize Folia detection and shared dispatcher services
-* use dispatcher factories for region and entity dispatcher lookup
-* only close the main dispatcher after it has been initialized
+* Initialize the Folia detection, the wake-up block service and the
+  global/async dispatchers at session construction instead of guarding
+  every access with a lazy lock — they are needed for virtually every
+  session anyway
+* Decide once at construction time, via pre-resolved factories, whether
+  getRegionDispatcher()/getEntityDispatcher() create Folia dispatchers
+  or fall back to the global region dispatcher, instead of re-checking
+  isFoliaLoaded on every call
+* Keep the main dispatcher lazy because it spawns a dedicated thread,
+  and only close it in dispose() when it was actually initialized, so
+  disposal no longer creates a dispatcher just to close it again
 
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
 index b34e9e862866a3ae42aed9cb01d7cd32b5f380bc..58d232d35984999b18ca57332d7ae3686dcfa6f0 100644

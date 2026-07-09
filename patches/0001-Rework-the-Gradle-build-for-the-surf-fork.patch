@@ -1,13 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 16:47:11 +0200
-Subject: [PATCH] update gradle build configuration
+Subject: [PATCH] Rework the Gradle build for the surf fork
 
-* add root build configuration for Kotlin, Dokka, Java library, and Maven publishing
-* configure sources, Javadocs, JVM toolchain 25, and release repository publishing
-* replace module-local repositories and dependency versions with shared version catalog entries
-* limit included modules to Folia and Velocity API and core projects
-* update Gradle wrapper from 8.9 to 9.5.1
+* Replace the upstream Groovy root build (OSS Sonatype publishing, Dokka
+  doc tasks for every platform) with a Kotlin DSL build that publishes
+  to the SLNE releases repository, including sources jars and Dokka
+  javadoc jars for the api modules
+* Only build the Folia and Velocity api/core modules; drop all other
+  platform modules, samples and tests from the build
+* Move dependency versions into a version catalog (Paper, Velocity,
+  Log4j) and resolve them from Maven Central, the SLNE repository and
+  the PaperMC repository
+* Update Kotlin to 2.3.20, target the JVM 25 toolchain and update the
+  Gradle wrapper from 8.9 to 9.5.1
 
 diff --git a/build.gradle b/build.gradle
 deleted file mode 100644

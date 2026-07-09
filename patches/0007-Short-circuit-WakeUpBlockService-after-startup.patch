@@ -1,8 +1,17 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:25:06 +0200
-Subject: [PATCH] add wakeup startup fast path
+Subject: [PATCH] Short-circuit WakeUpBlockService after startup
 
+ensureWakeup() runs on every isDispatchNeeded() call but only does
+real work while the server is still starting up. Once the startup
+phase is over, remember that in a volatile flag so the steady-state
+cost is a single volatile read.
+
+isManipulatedServerHeartBeatEnabled and primaryThread are now volatile
+because they are written and read from different threads, and
+ensureWakeup() reads them into locals so each invocation works on a
+consistent snapshot.
 
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/service/WakeUpBlockServiceImpl.kt
 index bd30d9b7487dd37446ec8a0cef2ad6ce76be02e8..bfb81ace8c10137743be3bdf8916627d0c84f4fa 100644

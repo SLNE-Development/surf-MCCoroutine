@@ -1,11 +1,27 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: twisti <76837088+twisti-dev@users.noreply.github.com>
 Date: Sat, 16 May 2026 17:01:44 +0200
-Subject: [PATCH] skip dispatcher scheduling on owned region threads
+Subject: [PATCH] Only dispatch coroutines when a thread switch is required
 
-* return false from region and entity dispatchers when already on the owning thread
-* return false from global and minecraft dispatchers when already on the target thread
-* update kdocs to describe inline execution behavior for dispatch checks
+All Folia dispatchers unconditionally returned true from
+isDispatchNeeded(), so every coroutine resumption went through a
+scheduler round-trip even when the current thread was already allowed
+to execute the task. Now:
+
+* RegionDispatcher and EntityDispatcher return false when the current
+  thread already owns the target region or entity
+* GlobalRegionDispatcher returns false when already on the global tick
+  thread
+* MinecraftCoroutineDispatcher returns false when already on the
+  primary thread (and no longer runs tasks inline just because the
+  plugin is disabled)
+* MainDispatcher returns false when already on its dedicated main
+  thread; its threadId field is now volatile so the check reads a
+  consistent value from any thread
+
+kotlinx.coroutines then executes the continuation inline instead of
+scheduling it. The async dispatchers still always dispatch; their
+kdocs now document that contract.
 
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/AsyncCoroutineDispatcher.kt
 index 2a0e90a2e1346781790d5af0fe2e56592bb8a133..e23e6da7bc5acde8132909532226d1b0f19f324c 100644
@@ -97,6 +113,42 @@ index 660471f4b710f8e9b25d4c1152b9811b039c4407..2009a74442b109da213edd5bcb4709b7
      }
  
      /**
+diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+index 2ef825107c8fd204edc3749060360bd8d809a5c2..c85ddb441145dd964e677718fbfe3d7c23618a59 100644
+--- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
++++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MainDispatcher.kt
+@@ -15,6 +15,13 @@ class MainDispatcher(
+         Thread(r, "MCCoroutine-${plugin.name}-MainThread")
+     }
+     private var actionQueue = ConcurrentLinkedQueue<Runnable>()
++
++    // surf start - only schedule tasks if needed
++    /**
++     * Thread id of the dedicated main thread.
++     */
++    @Volatile
++    // surf end - only schedule tasks if needed
+     var threadId = -1L
+ 
+     init {
+@@ -33,6 +40,17 @@ class MainDispatcher(
+         }, 1L, tickRateMs, TimeUnit.MILLISECONDS)
+     }
+ 
++    // surf start - only schedule tasks if needed
++    /**
++     * Returns `true` if the execution of the coroutine should be performed with [dispatch] method.
++     * Returns false if we are already on the main dispatcher thread, allowing the framework to
++     * skip dispatch entirely and run the block inline.
++     */
++    override fun isDispatchNeeded(context: CoroutineContext): Boolean {
++        return Thread.currentThread().threadId() != threadId
++    }
++    // surf end - only schedule tasks if needed
++
+     /**
+      * Handles dispatching the coroutine on the correct thread.
+      */
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt
 index 0a7aee7e575a2753412cd76c27792bc16464bdbb..2cb7f95b19cd642d439e5d0e5953604775ce0c74 100644
 --- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/dispatcher/MinecraftCoroutineDispatcher.kt
