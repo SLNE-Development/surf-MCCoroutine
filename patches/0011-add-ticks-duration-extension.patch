@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti-dev <76837088+twisti-dev@users.noreply.github.com>
+Date: Thu, 9 Jul 2026 15:47:00 +0200
+Subject: [PATCH] add ticks duration extension
+
+* add Int.ticksDuration returning a Kotlin Duration in milliseconds
+
+* deprecate Int.ticks in favor of ticksDuration
+
+diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+index 649267814a26b5cf7aef7eae6c60c035b3512cb9..cf7f31a311c7c6b3e578a26cd39944805fd5fcd4 100644
+--- a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
++++ b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+@@ -11,6 +11,8 @@ import org.bukkit.plugin.Plugin
+ import org.bukkit.plugin.PluginManager
+ import kotlin.coroutines.ContinuationInterceptor
+ import kotlin.coroutines.CoroutineContext
++import kotlin.time.Duration
++import kotlin.time.Duration.Companion.milliseconds
+ 
+ /**
+  * Static session for all plugins.
+@@ -272,11 +274,19 @@ fun PluginCommand.setSuspendingTabCompleter(context: CoroutineContext, suspendin
+  * work as expected. Therefore, 1 tick does not equal 50 milliseconds when using this method standalone and only
+  * sums up to 50 milliseconds if you use it together with delay.
+  */
++@Deprecated(message = "Use ticksDuration instead. Kotlinx coroutines prefers a duration.", replaceWith = ReplaceWith("ticksDuration", "com.github.shynixn.mccoroutine.folia.ticksDuration")) // surf - ticks duration
+ val Int.ticks: Long
+     get() {
+         return (this * 50L - 25)
+     }
+ 
++// surf start - ticks duration
++val Int.ticksDuration: Duration
++    get() {
++        return (this * 50L - 25).milliseconds
++    }
++// surf end - ticks duration
++
+ /**
+  * Hidden internal MCCoroutine interface.
+  */

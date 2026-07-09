@@ -4,10 +4,30 @@
   <component name="GradleSettings">
     <option name="linkedExternalProjectsSettings">
       <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/MCCoroutine" name="mccoroutine-root">
+                <projects>
+                  <project path="$PROJECT_DIR$/MCCoroutine" />
+                  <project path="$PROJECT_DIR$/MCCoroutine/mccoroutine-folia-api" />
+                  <project path="$PROJECT_DIR$/MCCoroutine/mccoroutine-folia-core" />
+                  <project path="$PROJECT_DIR$/MCCoroutine/mccoroutine-velocity-api" />
+                  <project path="$PROJECT_DIR$/MCCoroutine/mccoroutine-velocity-core" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/MCCoroutine" />
+            <option value="$PROJECT_DIR$/MCCoroutine/mccoroutine-folia-api" />
+            <option value="$PROJECT_DIR$/MCCoroutine/mccoroutine-folia-core" />
+            <option value="$PROJECT_DIR$/MCCoroutine/mccoroutine-velocity-api" />
+            <option value="$PROJECT_DIR$/MCCoroutine/mccoroutine-velocity-core" />
           </set>
         </option>
         <option name="myGradleHome" value="" />
