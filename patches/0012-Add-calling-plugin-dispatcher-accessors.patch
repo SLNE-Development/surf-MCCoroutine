@@ -1,0 +1,284 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: twisti-dev <76837088+twisti-dev@users.noreply.github.com>
+Date: Thu, 9 Jul 2026 21:24:53 +0200
+Subject: [PATCH] Add calling-plugin dispatcher accessors
+
+Introduce Dispatchers.GlobalDispatcher, Dispatchers.forEntity,
+Dispatchers.forRegion and Dispatchers.forPlugin extensions on the
+kotlinx Dispatchers object. Unlike the existing Plugin.* accessors these
+take no Plugin receiver: the owning plugin is resolved from the caller
+class via MethodHandles and cached per class, so plugin code can obtain a
+dispatcher without threading a Plugin reference through every call site.
+They are inline and @JvmSynthetic on purpose, so the caller-class lookup
+is correct and the API stays Kotlin-only (it cannot resolve a plugin from
+Java call sites).
+
+To support withContext(Dispatchers.forEntity(entity)) ergonomically, the
+underlying Plugin.globalRegionDispatcher, mainDispatcher, entityDispatcher
+and regionDispatcher accessors now return CoroutineDispatcher instead of
+CoroutineContext. Binary-compatible @Deprecated(HIDDEN) overloads with the
+former CoroutineContext return type are kept so already-compiled plugins
+keep linking.
+
+Also drops two stray IDE auto-imports (org.eclipse.sisu.Hidden and the
+redundant kotlin.jvm.java) that were unused.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+index cf7f31a311c7c6b3e578a26cd39944805fd5fcd4..383895da926040a0dc2353219fe1b68e1fa2829d 100644
+--- a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
++++ b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+@@ -9,6 +9,8 @@ import org.bukkit.event.Event
+ import org.bukkit.event.Listener
+ import org.bukkit.plugin.Plugin
+ import org.bukkit.plugin.PluginManager
++import org.bukkit.plugin.java.JavaPlugin
++import java.lang.invoke.MethodHandles
+ import kotlin.coroutines.ContinuationInterceptor
+ import kotlin.coroutines.CoroutineContext
+ import kotlin.time.Duration
+@@ -37,13 +39,18 @@ val Plugin.mcCoroutineConfiguration: MCCoroutineConfiguration
+         return mcCoroutine.getCoroutineSession(this).mcCoroutineConfiguration
+     }
+ 
++// surf start - narrow dispatcher return type to CoroutineDispatcher
++@Deprecated("", level = DeprecationLevel.HIDDEN)
++val Plugin.globalRegionDispatcher: CoroutineContext get() = globalRegionDispatcher
++// surf end - narrow dispatcher return type to CoroutineDispatcher
++
+ /**
+  * Gets the dispatcher to perform edits on data that the global region owns, such as game rules, day time, weather, or to execute commands using the console command sender.
+  * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
+  */
+-val Plugin.globalRegionDispatcher: CoroutineContext
++val Plugin.globalRegionDispatcher: CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+     get() {
+-        return mcCoroutine.getCoroutineSession(this).dispatcherGlobalRegion
++        return mcCoroutine.getCoroutineSession(this).dispatcherGlobalRegion as CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+     }
+ 
+ /**
+@@ -54,12 +61,17 @@ val Plugin.asyncDispatcher: CoroutineContext
+         return mcCoroutine.getCoroutineSession(this).dispatcherAsync
+     }
+ 
++// surf start - narrow dispatcher return type to CoroutineDispatcher
++@Deprecated("", level = DeprecationLevel.HIDDEN)
++val Plugin.mainDispatcher: CoroutineContext get() = mainDispatcher
++// surf end - narrow dispatcher return type to CoroutineDispatcher
++
+ /**
+  * Gets the plugin main dispatcher. The main dispatcher consists of a single thread dedicated for your plugin
+  */
+-val Plugin.mainDispatcher: CoroutineContext
++val Plugin.mainDispatcher: CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+     get() {
+-        return mcCoroutine.getCoroutineSession(this).dispatcherMain
++        return mcCoroutine.getCoroutineSession(this).dispatcherMain as CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+     }
+ 
+ /**
+@@ -80,30 +92,45 @@ fun Plugin.isFoliaLoaded(): Boolean {
+     return mcCoroutine.getCoroutineSession(this).isFoliaLoaded
+ }
+ 
++// surf start - narrow dispatcher return type to CoroutineDispatcher
++@Deprecated("", level = DeprecationLevel.HIDDEN)
++fun Plugin.entityDispatcher(entity: Entity): CoroutineContext = entityDispatcher(entity)
++// surf end - narrow dispatcher return type to CoroutineDispatcher
++
+ /**
+  * Gets the dispatcher to schedule tasks on the region that owns the entity.
+  * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
+  */
+-fun Plugin.entityDispatcher(entity: Entity): CoroutineContext {
+-    return mcCoroutine.getCoroutineSession(this).getEntityDispatcher(entity)
++fun Plugin.entityDispatcher(entity: Entity): CoroutineDispatcher { // surf - narrow dispatcher return type to CoroutineDispatcher
++    return mcCoroutine.getCoroutineSession(this).getEntityDispatcher(entity) as CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+ }
+ 
++// surf start - narrow dispatcher return type to CoroutineDispatcher
++@Deprecated("", level = DeprecationLevel.HIDDEN)
++fun Plugin.regionDispatcher(location: Location): CoroutineContext = regionDispatcher(location)
++// surf end - narrow dispatcher return type to CoroutineDispatcher
++
+ /**
+  * Gets the dispatcher to schedule tasks on a particular region.
+  * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
+  */
+-fun Plugin.regionDispatcher(location: Location): CoroutineContext {
++fun Plugin.regionDispatcher(location: Location): CoroutineDispatcher { // surf - narrow dispatcher return type to CoroutineDispatcher
+     return mcCoroutine.getCoroutineSession(this)
+-        .getRegionDispatcher(location.world!!, location.blockX shr 4, location.blockZ shr 4)
++        .getRegionDispatcher(location.world!!, location.blockX shr 4, location.blockZ shr 4) as CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+ }
+ 
++// surf start - narrow dispatcher return type to CoroutineDispatcher
++@Deprecated("", level = DeprecationLevel.HIDDEN)
++fun Plugin.regionDispatcher(world: World, chunkX: Int, chunkZ: Int): CoroutineContext = regionDispatcher(world, chunkX, chunkZ)
++// surf end - narrow dispatcher return type to CoroutineDispatcher
++
+ /**
+  * Gets the dispatcher to schedule tasks on a particular region.
+  * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
+  */
+-fun Plugin.regionDispatcher(world: World, chunkX: Int, chunkZ: Int): CoroutineContext {
++fun Plugin.regionDispatcher(world: World, chunkX: Int, chunkZ: Int): CoroutineDispatcher { // surf - narrow dispatcher return type to CoroutineDispatcher
+     return mcCoroutine.getCoroutineSession(this)
+-        .getRegionDispatcher(world, chunkX, chunkZ)
++        .getRegionDispatcher(world, chunkX, chunkZ) as CoroutineDispatcher // surf - narrow dispatcher return type to CoroutineDispatcher
+ }
+ 
+ /**
+@@ -287,6 +314,150 @@ val Int.ticksDuration: Duration
+     }
+ // surf end - ticks duration
+ 
++// surf start - calling-plugin dispatcher accessors on kotlinx Dispatchers
++/**
++ * Gets the dispatcher to perform edits on data that the global region owns, such as game rules, day time, weather, or to execute commands using the console command sender.
++ * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
++ *
++ * Unlike [Plugin.globalRegionDispatcher] this accessor takes no [Plugin] receiver. The owning plugin is resolved automatically from the
++ * caller's class via [MethodHandles], which is why this is `inline` and only callable from Kotlin plugin code.
++ */
++@get:JvmSynthetic
++@Suppress("NOTHING_TO_INLINE")
++inline val Dispatchers.GlobalDispatcher: CoroutineDispatcher
++    get() = CallingPluginDispatchers.global(
++        MethodHandles.lookup().lookupClass()
++    )
++
++/**
++ * Gets the dispatcher to schedule tasks on the region that owns the given [entity].
++ * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
++ *
++ * Unlike [Plugin.entityDispatcher] this accessor takes no [Plugin] receiver. The owning plugin is resolved automatically from the
++ * caller's class via [MethodHandles], which is why this is `inline` and only callable from Kotlin plugin code.
++ */
++@JvmSynthetic
++@Suppress("NOTHING_TO_INLINE")
++inline fun Dispatchers.forEntity(entity: Entity): CoroutineDispatcher {
++    return CallingPluginDispatchers.forEntity(
++        MethodHandles.lookup().lookupClass(),
++        entity
++    )
++}
++
++/**
++ * Gets the dispatcher to schedule tasks on the region identified by [world] and the chunk coordinates [chunkX]/[chunkZ].
++ * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
++ *
++ * Unlike [Plugin.regionDispatcher] this accessor takes no [Plugin] receiver. The owning plugin is resolved automatically from the
++ * caller's class via [MethodHandles], which is why this is `inline` and only callable from Kotlin plugin code.
++ */
++@JvmSynthetic
++@Suppress("NOTHING_TO_INLINE")
++inline fun Dispatchers.forRegion(
++    world: World,
++    chunkX: Int,
++    chunkZ: Int
++): CoroutineDispatcher {
++    return CallingPluginDispatchers.forRegion(
++        MethodHandles.lookup().lookupClass(),
++        world,
++        chunkX,
++        chunkZ
++    )
++}
++
++/**
++ * Gets the dispatcher to schedule tasks on the region that owns the given [location].
++ * If Folia is not loaded, this falls back to the bukkit minecraftDispatcher.
++ *
++ * Unlike [Plugin.regionDispatcher] this accessor takes no [Plugin] receiver. The owning plugin is resolved automatically from the
++ * caller's class via [MethodHandles], which is why this is `inline` and only callable from Kotlin plugin code.
++ *
++ * @throws IllegalArgumentException if the [location] has no world.
++ */
++@JvmSynthetic
++@Suppress("NOTHING_TO_INLINE")
++inline fun Dispatchers.forRegion(location: Location): CoroutineDispatcher {
++    val world = requireNotNull(location.world) {
++        "Cannot create a region dispatcher for a location without a world."
++    }
++
++    return CallingPluginDispatchers.forRegion(
++        MethodHandles.lookup().lookupClass(),
++        world,
++        location.blockX shr 4,
++        location.blockZ shr 4
++    )
++}
++
++/**
++ * Gets the plugin main dispatcher. The main dispatcher consists of a single thread dedicated for your plugin.
++ *
++ * Unlike [Plugin.mainDispatcher] this accessor takes no [Plugin] receiver. The owning plugin is resolved automatically from the
++ * caller's class via [MethodHandles], which is why this is `inline` and only callable from Kotlin plugin code.
++ */
++@JvmSynthetic
++@Suppress("NOTHING_TO_INLINE")
++inline fun Dispatchers.forPlugin(): CoroutineDispatcher {
++    return CallingPluginDispatchers.forPlugin(
++        MethodHandles.lookup().lookupClass()
++    )
++}
++
++/**
++ * Internal support for the calling-plugin dispatcher accessors. Resolves and caches the owning [JavaPlugin] for a caller class.
++ */
++@PublishedApi
++internal object CallingPluginDispatchers {
++    private val pluginByCallerClass = object : ClassValue<JavaPlugin>() {
++        override fun computeValue(type: Class<*>): JavaPlugin {
++            return try {
++                JavaPlugin.getProvidingPlugin(type)
++            } catch (e: IllegalArgumentException) {
++                throw IllegalStateException(
++                    "Cannot resolve the calling plugin for class '${type.name}'. " +
++                            "This API must be called from plugin code and should not be called from Java.",
++                    e
++                )
++            }
++        }
++    }
++
++    fun forEntity(
++        callerClass: Class<*>,
++        entity: Entity
++    ): CoroutineDispatcher {
++        val plugin = pluginByCallerClass.get(callerClass)
++
++        return plugin.entityDispatcher(entity)
++    }
++
++    fun forRegion(
++        callerClass: Class<*>,
++        world: World,
++        chunkX: Int,
++        chunkZ: Int
++    ): CoroutineDispatcher {
++        val plugin = pluginByCallerClass.get(callerClass)
++
++        return plugin.regionDispatcher(world, chunkX, chunkZ)
++    }
++
++    fun forPlugin(callerClass: Class<*>): CoroutineDispatcher {
++        val plugin = pluginByCallerClass.get(callerClass)
++
++        return plugin.mainDispatcher
++    }
++
++    fun global(callerClass: Class<*>): CoroutineDispatcher {
++        val plugin = pluginByCallerClass.get(callerClass)
++
++        return plugin.globalRegionDispatcher
++    }
++}
++// surf end - calling-plugin dispatcher accessors on kotlinx Dispatchers
++
+ /**
+  * Hidden internal MCCoroutine interface.
+  */
