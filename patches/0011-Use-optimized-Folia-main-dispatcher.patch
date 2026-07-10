@@ -9,8 +9,47 @@ The optimized dispatcher no longer depends on mainDispatcherTickRateMs for repea
 
 This reduces scheduler overhead for idle plugins and improves burst handling by letting the optimized dispatcher coalesce queued coroutine work instead of relying on fixed-rate draining.
 
+diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/CoroutineSession.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/CoroutineSession.kt
+index a5f71477a40792361863a392d0c4a23c9e752348..d460c50d5298db0dc5a07918728a7e44c406b5f0 100644
+--- a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/CoroutineSession.kt
++++ b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/CoroutineSession.kt
+@@ -48,6 +48,16 @@ interface CoroutineSession {
+      */
+     val dispatcherMainThreadId: Long
+ 
++    // surf start - expose isPluginThread as the modern replacement for dispatcherMainThreadId checks
++    /**
++     * Returns true if the calling thread is the plugin main thread backing [dispatcherMain].
++     *
++     * Prefer this over comparing [dispatcherMainThreadId] against the current thread id,
++     * as it checks the thread reference directly.
++     */
++    val isPluginThread: Boolean
++    // surf end - expose isPluginThread as the modern replacement for dispatcherMainThreadId checks
++
+     /**
+      * Gets if the Folia schedulers where successfully loaded into MCCoroutine.
+      * Returns false if MCCoroutine falls back to the BukkitScheduler.
+diff --git a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+index cf7f31a311c7c6b3e578a26cd39944805fd5fcd4..969eca8e2a4926446999bba4900b87b28fa146c7 100644
+--- a/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
++++ b/mccoroutine-folia-api/src/main/java/com/github/shynixn/mccoroutine/folia/MCCoroutine.kt
+@@ -67,10 +67,11 @@ val Plugin.mainDispatcher: CoroutineContext
+  * Throws an Exception if not.
+  */
+ fun Plugin.ensurePluginThread() {
+-    val threadId = mcCoroutine.getCoroutineSession(this).dispatcherMainThreadId
+-    if (Thread.currentThread().threadId() != threadId) { // surf - change id to threadId()
++    // surf start - use isPluginThread instead of comparing dispatcher thread ids
++    if (!mcCoroutine.getCoroutineSession(this).isPluginThread) {
+         throw IllegalStateException("The current thread is not the main thread of plugin ${name}.")
+     }
++    // surf end - use isPluginThread instead of comparing dispatcher thread ids
+ }
+ 
+ /**
 diff --git a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
-index 58d232d35984999b18ca57332d7ae3686dcfa6f0..d3bda00700948a851a0e1174d829d8a922ebae2e 100644
+index 58d232d35984999b18ca57332d7ae3686dcfa6f0..dca6ea4cc19da2f1cf06128fec4b52cb5dc25e9d 100644
 --- a/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
 +++ b/mccoroutine-folia-core/src/main/java/com/github/shynixn/mccoroutine/folia/impl/CoroutineSessionImpl.kt
 @@ -5,6 +5,7 @@ import com.github.shynixn.mccoroutine.folia.dispatcher.*
@@ -33,98 +72,227 @@ index 58d232d35984999b18ca57332d7ae3686dcfa6f0..d3bda00700948a851a0e1174d829d8a9
      }
  
      // surf start - pre-resolve dispatcher
+@@ -154,6 +155,13 @@ internal class CoroutineSessionImpl(
+             return dispatcherMain.threadId
+         }
+ 
++    // surf start - use optimized main dispatcher
++    override val isPluginThread: Boolean
++        get() {
++            return dispatcherMain.isDispatcherThread()
++        }
++    // surf end - use optimized main dispatcher
++
+     init {
+         // Root Exception Handler. All Exception which are not consumed by the caller end up here.
+         val exceptionHandler = CoroutineExceptionHandler { _, e ->
+@@ -232,7 +240,7 @@ internal class CoroutineSessionImpl(
+         scope.cancel()
+         // surf start - track dispatcher main initialization state
+         if (dispatcherMainInitialized) {
+-            dispatcherMain.close()
++            dispatcherMain.closeAndJoin()
+         }
+         // surf end - track dispatcher main initialization state
+         wakeUpBlockService.dispose()
 diff --git a/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt b/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..c80bfb0f763c79cc2fd719fec9a2397f87dff68e
+index 0000000000000000000000000000000000000000..f8c98688bb8ecde92bd46dea6d5692b6e889b069
 --- /dev/null
 +++ b/mccoroutine-folia-core/src/main/java/dev/slne/surf/mccoroutine/OptimizedMainDispatcher.kt
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,194 @@
 +package dev.slne.surf.mccoroutine
 +
 +import kotlinx.coroutines.CoroutineDispatcher
 +import kotlinx.coroutines.Runnable
 +import org.bukkit.plugin.Plugin
 +import java.lang.AutoCloseable
-+import java.util.concurrent.ConcurrentLinkedQueue
-+import java.util.concurrent.Executors
 +import java.util.concurrent.RejectedExecutionException
-+import java.util.concurrent.atomic.AtomicBoolean
++import java.util.concurrent.atomic.AtomicReference
++import java.util.concurrent.locks.LockSupport
++import java.util.logging.Level
 +import kotlin.coroutines.CoroutineContext
 +
-+class OptimizedMainDispatcher(private val plugin: Plugin): CoroutineDispatcher(), AutoCloseable {
-+    private val executor = Executors.newSingleThreadExecutor { r ->
-+        Thread(r, "MCCoroutine-${plugin.name}-MainThread")
-+    }
++class OptimizedMainDispatcher(plugin: Plugin) : CoroutineDispatcher(), AutoCloseable {
 +
-+    private val actionQueue = ConcurrentLinkedQueue<Runnable>()
++    private val logger = plugin.logger
++    private val dispatcherName = "MCCoroutine-${plugin.name}-MainThread"
 +
-+    private val drainScheduled = AtomicBoolean(false)
-+    private val closed = AtomicBoolean(false)
++    private val actionQueue = MpscLinkedQueue<Runnable>()
 +
 +    @Volatile
-+    var threadId = -1L
-+        private set
++    private var parked = false
 +
-+    init {
-+        executor.execute {
-+            threadId = Thread.currentThread().threadId()
-+        }
++    @Volatile
++    private var closed = false
++
++    private val workerThread = Thread(
++        null,
++        ::runEventLoop,
++        dispatcherName,
++        0,
++        false
++    ).apply {
++        isDaemon = true
 +    }
 +
++    init {
++        workerThread.start()
++    }
++
++    /**
++     * The id of the dedicated dispatcher thread.
++     *
++     * Kept for backwards compatibility with [com.github.shynixn.mccoroutine.folia.CoroutineSession.dispatcherMainThreadId].
++     * Prefer [isDispatcherThread] for thread checks, as it compares the thread reference
++     * directly instead of matching thread ids across threads.
++     */
++    val threadId: Long
++        get() = workerThread.threadId()
++
 +    override fun isDispatchNeeded(context: CoroutineContext): Boolean {
-+        return Thread.currentThread().threadId() != threadId
++        return Thread.currentThread() !== workerThread
++    }
++
++    /**
++     * Returns true if the calling thread is this dispatcher's dedicated worker thread.
++     */
++    fun isDispatcherThread(): Boolean {
++        return Thread.currentThread() === workerThread
 +    }
 +
 +    override fun dispatch(context: CoroutineContext, block: Runnable) {
-+        if (closed.get()) return
++        if (closed) throw rejectedExecution()
 +
-+        if (!isDispatchNeeded(context)) {
-+            block.run()
-+            return
++        val node = actionQueue.offer(block)
++
++        if (closed) {
++            node.value = null
++            LockSupport.unpark(workerThread)
++            throw rejectedExecution()
 +        }
 +
-+        actionQueue.add(block)
-+        scheduleDrain()
++        if (parked) {
++            LockSupport.unpark(workerThread)
++        }
 +    }
 +
-+    private fun scheduleDrain() {
-+        if (!drainScheduled.compareAndSet(false, true)) return
-+
++    private fun runEventLoop() {
 +        try {
-+            executor.execute {
++            while (!closed) {
 +                drainQueue()
-+            }
-+        } catch (_: RejectedExecutionException) {
-+            drainScheduled.set(false)
 +
-+            if (closed.get()) {
-+                actionQueue.clear()
++                if (closed) break
++                parked = true
++
++                if (closed) {
++                    parked = false
++                    break
++                }
++
++                val racedAction = actionQueue.poll()
++
++                if (racedAction != null) {
++                    parked = false
++                    executeSafely(racedAction)
++                    continue
++                }
++
++                LockSupport.park(this)
++                parked = false
 +            }
++        } finally {
++            parked = false
++            closed = true
++
++            actionQueue.clear()
 +        }
 +    }
 +
 +    private fun drainQueue() {
-+        try {
-+            while (!closed.get()) {
-+                val action = actionQueue.poll() ?: break
-+                action.run()
-+            }
-+        } finally {
-+            drainScheduled.set(false)
++        while (!closed) {
++            val action = actionQueue.poll() ?: return
++            executeSafely(action)
++        }
++    }
 +
-+            if (!closed.get() && actionQueue.isNotEmpty()) {
-+                scheduleDrain()
++    private fun executeSafely(action: Runnable) {
++        try {
++            action.run()
++        } catch (e: Throwable) {
++            @Suppress("removal", "DEPRECATION")
++            when (e) {
++                is ThreadDeath,
++                is VirtualMachineError -> throw e
++
++                else -> logger.log(
++                    Level.SEVERE,
++                    "Unhandled exception in $dispatcherName",
++                    e
++                )
 +            }
 +        }
 +    }
 +
 +    override fun close() {
-+        if (!closed.compareAndSet(false, true)) {
-+            return
++        closed = true
++        LockSupport.unpark(workerThread)
++    }
++
++    fun closeAndJoin() {
++        close()
++
++        if (Thread.currentThread() !== workerThread) {
++            workerThread.join()
++        }
++    }
++
++    private fun rejectedExecution(): RejectedExecutionException {
++        return RejectedExecutionException("$dispatcherName is closed")
++    }
++
++    override fun toString(): String {
++        return dispatcherName
++    }
++
++    private class MpscLinkedQueue<E : Any> {
++
++        class Node<E : Any>(
++            @Volatile
++            var value: E?
++        ) {
++            @Volatile
++            var next: Node<E>? = null
 +        }
 +
-+        actionQueue.clear()
-+        executor.shutdownNow()
++        private var consumerNode = Node<E>(null)
++        private val producerNode = AtomicReference(consumerNode)
++
++        fun offer(value: E): Node<E> {
++            val node = Node(value)
++            producerNode.getAndSet(node).next = node
++            return node
++        }
++
++        fun poll(): E? {
++            while (true) {
++                val next = consumerNode.next ?: return null
++                consumerNode = next
++
++                val value = next.value
++                next.value = null
++
++                if (value != null) {
++                    return value
++                }
++            }
++        }
++
++        fun clear() {
++            while (poll() != null) {
++                // Clear all elements
++            }
++        }
 +    }
 +}
 \ No newline at end of file
