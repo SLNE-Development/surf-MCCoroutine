@@ -1,0 +1,43 @@
+name: Publish to Maven
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with upstream submodule)
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'graalvm'
+          java-version: '25'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@slne.dev"
+          git config --global user.name "SLNE CI"
+
+      - name: Apply patches
+        run: ./gradlew applyPatches
+
+      - name: Publish to reposilite
+        working-directory: MCCoroutine
+        env:
+          SLNE_RELEASES_REPO_USERNAME: ${{ secrets.SLNE_RELEASES_REPO_USERNAME }}
+          SLNE_RELEASES_REPO_PASSWORD: ${{ secrets.SLNE_RELEASES_REPO_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew publish

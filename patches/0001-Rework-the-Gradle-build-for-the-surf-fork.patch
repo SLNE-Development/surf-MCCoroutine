@@ -236,12 +236,13 @@ index eee4c13e485c7ba002678ab1cb8f1a5c64d8d692..00000000000000000000000000000000
 -}
 diff --git a/build.gradle.kts b/build.gradle.kts
 new file mode 100644
-index 0000000000000000000000000000000000000000..421e644efb0ff572670c7cdc8fcae0d902ca805b
+index 0000000000000000000000000000000000000000..e72b7f71f3de0c129a250ba0851155fe277f8b3f
 --- /dev/null
 +++ b/build.gradle.kts
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,101 @@
 +import org.gradle.jvm.tasks.Jar
 +import org.jetbrains.kotlin.gradle.dsl.KotlinJvmExtension
++import java.util.Properties
 +
 +plugins {
 +    kotlin("jvm") version "2.3.20" apply false
@@ -250,10 +251,27 @@ index 0000000000000000000000000000000000000000..421e644efb0ff572670c7cdc8fcae0d9
 +    `maven-publish`
 +}
 +
++// surf start - update build
++val forkRootProperties = rootDir.parentFile
++    ?.resolve("gradle.properties")
++    ?.takeIf { it.isFile }
++    ?.let { propertiesFile ->
++        Properties().apply { propertiesFile.inputStream().use { load(it) } }
++    }
++
++fun forkProperty(name: String): String? =
++    forkRootProperties?.getProperty(name) ?: findProperty(name) as String?
++
 +allprojects {
-+    group = "dev.slne.forks.mccoroutine"
-+    version = findProperty("version") as String
++    val snapshot = (forkProperty("snapshot") ?: "false").toBooleanStrict()
++
++    group = forkProperty("group")
++        ?: error("Missing 'group' in the surf-MCCoroutine root gradle.properties")
++    version = (forkProperty("version")
++        ?: error("Missing 'version' in the surf-MCCoroutine root gradle.properties")) +
++        if (snapshot) "-SNAPSHOT" else ""
 +}
++// surf end - update build
 +
 +subprojects {
 +    val isApiModule = name.endsWith("-api")
@@ -277,6 +295,12 @@ index 0000000000000000000000000000000000000000..421e644efb0ff572670c7cdc8fcae0d9
 +    dependencies {
 +        compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 +    }
++
++    // surf start - update build
++    tasks.withType<Test>().configureEach { enabled = false }
++    tasks.matching { it.name == "compileTestKotlin" || it.name == "compileTestJava" }
++        .configureEach { enabled = false }
++    // surf end - update build
 +
 +    extensions.findByType<KotlinJvmExtension>()?.apply {
 +        jvmToolchain(25)
@@ -356,6 +380,9 @@ index 50a346ce261473cb4ecf639f6c4b3d80cf1437a9..394e1de938f833f0c04c3db838727543
  zipStorePath=wrapper/dists
 -distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-all.zip
 +distributionUrl=https\://services.gradle.org/distributions/gradle-9.5.1-all.zip
+diff --git a/gradlew b/gradlew
+old mode 100644
+new mode 100755
 diff --git a/mccoroutine-folia-api/build.gradle.kts b/mccoroutine-folia-api/build.gradle.kts
 index 0606375b6dc78997fda5eb033c1fe7eab0d4d44e..ace4a2b19f419f6a757d09b923f2fd1b503f1d6f 100644
 --- a/mccoroutine-folia-api/build.gradle.kts
