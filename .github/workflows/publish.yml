@@ -10,10 +10,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with upstream submodule)
+      - name: Checkout
         uses: actions/checkout@v5
         with:
-          submodules: recursive
           persist-credentials: false
 
       - name: Set up JDK
@@ -24,6 +23,9 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+
+      - name: Checkout upstream submodule
+        run: git submodule update --init --recursive
 
       - name: Configure git identity
         run: |
